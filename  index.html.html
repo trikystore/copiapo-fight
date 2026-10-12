@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#10131d">
+<title>Copiapó Fight: Rescate en las Alturas</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#10131d;color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden;touch-action:none}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+#shell{width:100%;height:100%;max-width:1100px;display:flex;flex-direction:column;justify-content:center;background:#10131d}
+#top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px;font-weight:800;letter-spacing:.04em;font-size:clamp(12px,2.5vw,16px)}
+#top span{color:#ffcf58}#game{width:100%;height:auto;max-height:calc(100dvh - 132px);aspect-ratio:16/9;display:block;background:#171c2b;object-fit:contain}
+#hint{font-size:11px;color:#aab1c7;text-align:center;padding:3px 8px}
+#controls{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));user-select:none}
+.pad,.actions{display:flex;align-items:center;gap:7px}.pad{gap:5px}
+button{border:1px solid #59647c;background:linear-gradient(#303a52,#1c2436);color:white;border-radius:14px;font-weight:900;font-size:clamp(17px,4vw,24px);min-width:clamp(48px,12vw,66px);height:clamp(48px,12vw,62px);box-shadow:0 4px 0 #0b0e15;touch-action:none}
+button:active,.pressed{transform:translateY(3px);box-shadow:0 1px 0 #0b0e15;background:#586783}
+button.hit{background:linear-gradient(#e85e48,#9d2d34);border-color:#ff9b7f}button.jump{background:linear-gradient(#d5a83c,#8c641c);border-color:#ffe28a}
+#overlay{position:fixed;inset:0;background:#090c15d9;display:flex;align-items:center;justify-content:center;padding:22px;z-index:4}
+.panel{max-width:460px;width:100%;text-align:center;background:linear-gradient(145deg,#232d43,#121723);border:2px solid #f1b944;border-radius:22px;padding:22px;box-shadow:0 20px 80px #0009}
+.panel h1{font-size:clamp(25px,7vw,42px);line-height:1;margin:5px 0 12px;color:#ffce57;text-shadow:3px 3px #8c3037}.panel p{color:#d4d9e6;line-height:1.45;font-size:14px}.panel button{width:100%;height:54px;font-size:17px;margin-top:8px;background:linear-gradient(#eabf4f,#ad7421);color:#17131a;border:0}
+.small{font-size:11px!important;color:#9da7bc!important}
+@media (orientation:portrait){#game{max-height:48dvh}#top{padding:5px 8px}#hint{font-size:10px}#controls{padding-top:5px}.panel{padding:18px}}
+</style>
+</head>
+<body>
+<div id="shell">
+ <div id="top"><div>🥊 COPIAPÓ FIGHT</div><div>VIDA <span id="hp">100</span>%</div><div>PUNTOS <span id="score">0000</span></div></div>
+ <canvas id="game" width="960" height="540" aria-label="Juego de pelea lateral"></canvas>
+ <div id="hint">Muévete, salta y golpea. ¡Llega al último piso y rescata a Valentina!</div>
+ <div id="controls">
+  <div class="pad"><button data-key="left" aria-label="Izquierda">◀</button><button data-key="down" aria-label="Abajo">▼</button><button data-key="right" aria-label="Derecha">▶</button></div>
+  <div class="actions"><button class="jump" data-key="jump" aria-label="Saltar">⬆</button><button class="hit" data-key="punch" aria-label="Golpear">PUÑO</button><button class="hit" data-key="kick" aria-label="Patada">PATADA</button></div>
+ </div>
+</div>
+<div id="overlay"><div class="panel"><h1>COPIAPÓ FIGHT</h1><p><b>Rescate en las alturas</b><br>El héroe Atacameño debe abrirse paso entre pandilleros, subir al edificio y rescatar a Valentina en el último piso.</p><p>Controles táctiles: ◀ ▶ moverse · ▼ acercarse al fondo · ⬆ saltar · PUÑO / PATADA atacar.</p><button id="start">¡COMENZAR PELEA!</button><p class="small">Demo original inspirada en los clásicos beat ’em up arcade.</p></div></div>
+<script>
+(()=> {
+const c=document.getElementById('game'),ctx=c.getContext('2d'), hpEl=document.getElementById('hp'), scoreEl=document.getElementById('score'), overlay=document.getElementById('overlay');
+const keys={left:false,right:false,up:false,down:false,jump:false,punch:false,kick:false};
+let started=false,ended=false,win=false,score=0,world=0,last=0,shake=0,flash=0,stage=0;
+const hero={x:130,y:390,z:0,vz:0,face:1,hp:100,atk:0,atkType:'punch',cool:0,inv:0,walk:0};
+let enemies=[],particles=[],rescued=false;
+const spawn=(x,type='pandillero')=>enemies.push({x,y:390+Math.random()*20-10,z:0,hp:type==='maton'?65:35,max:type==='maton'?65:35,type,face:-1,atk:0,cool:.4+Math.random(),walk:0,dead:false,hit:0});
+function reset(){score=0;world=0;stage=0;ended=false;win=false;rescued=false;hero.x=130;hero.y=390;hero.z=0;hero.vz=0;hero.hp=100;hero.atk=0;hero.cool=0;hero.inv=0;enemies=[];particles=[];spawn(470);spawn(620);spawn(790,'maton');}
+function keyName(k){return ({ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right',ArrowUp:'up',w:'up',ArrowDown:'down',s:'down',j:'punch',z:'punch',k:'kick',x:'kick', ' ':'jump',ArrowUp:'up'})[k]}
+window.addEventListener('keydown',e=>{let n=keyName(e.key);if(n){keys[n]=true;e.preventDefault()}});
+window.addEventListener('keyup',e=>{let n=keyName(e.key);if(n)keys[n]=false});
+document.querySelectorAll('[data-key]').forEach(b=>{const k=b.dataset.key;const on=e=>{e.preventDefault();keys[k]=true;b.classList.add('pressed')},off=e=>{e.preventDefault();keys[k]=false;b.classList.remove('pressed')};b.addEventListener('pointerdown',on);['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,off))});
+document.getElementById('start').onclick=()=>{reset();started=true;overlay.style.display='none';last=performance.now();requestAnimationFrame(loop)};
+function rect(x,y,w,h,col){ctx.fillStyle=col;ctx.fillRect(x,y,w,h)}
+function text(t,x,y,size,col='#fff',align='left'){ctx.font=`900 ${size}px system-ui`;ctx.textAlign=align;ctx.fillStyle=col;ctx.fillText(t,x,y)}
+function bg(){
+ const g=ctx.createLinearGradient(0,0,0,540);g.addColorStop(0,'#252c48');g.addColorStop(.65,'#ef8055');g.addColorStop(1,'#4b3041');ctx.fillStyle=g;ctx.fillRect(0,0,960,540);
+ // sunset and distant mountains
+ ctx.fillStyle='#ffd17a';ctx.beginPath();ctx.arc(760,150,65,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#5a526b';ctx.beginPath();ctx.moveTo(0,345);ctx.lineTo(115,230);ctx.lineTo(220,330);ctx.lineTo(350,205);ctx.lineTo(490,345);ctx.lineTo(640,250);ctx.lineTo(790,350);ctx.lineTo(960,230);ctx.lineTo(960,430);ctx.lineTo(0,430);ctx.fill();
+ // building scrolls toward final
+ for(let i=0;i<8;i++){let x=i*145-(world*.42%145);let h=100+(i%3)*38;rect(x,300-h,118,h,'#252b3b');rect(x+8,310-h,102,h-12,'#394155');for(let yy=0;yy<4;yy++)for(let xx=0;xx<4;xx++)rect(x+15+xx*23,320-h+yy*25,10,13,(xx+yy+i)%3?'#ffca70':'#67768c')}
+ // street
+ rect(0,425,960,115,'#292c38');rect(0,425,960,5,'#f9a15d');for(let i=0;i<9;i++){rect(i*140-(world%140),476,70,5,'#e6b979')}
+ // stage progress sign
+ rect(18,18,250,40,'#111827bb');text(world<1050?'ZONA 1: LAS CALLES':world<1850?'ZONA 2: EL EDIFICIO':'AZOTEA',32,44,16,'#ffda77');
+}
+function fighter(x,y,z,face,color,heroFlag,walking,attack=0,dead=false){
+ ctx.save();ctx.translate(x,y-z);ctx.scale(face,1);
+ if(z>0){ctx.globalAlpha=.2;ctx.fillStyle='#050711';ctx.beginPath();ctx.ellipse(0,z+3,22,7,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}
+ // shadow
+ ctx.fillStyle='#10111a77';ctx.beginPath();ctx.ellipse(0,4,23,8,0,0,Math.PI*2);ctx.fill();
+ // legs
+ let stride=walking?Math.sin(performance.now()/75)*7:0;
+ rect(-15, -36,12,30,'#1a1b29');rect(3,-36,12,30,'#1a1b29');rect(-18+stride,-10,18,9,heroFlag?'#f2b744':'#262c39');rect(1-stride,-10,19,9,heroFlag?'#f2b744':'#262c39');
+ // torso
+ rect(-19,-78,38,43,color);rect(-23,-74,8,28,color);rect(15,-74,8,28,color);
+ // belt / chest emblem
+ rect(-19,-43,38,5,heroFlag?'#ffe28c':'#8d3441');
+ if(heroFlag){ctx.fillStyle='#ffe16b';ctx.beginPath();ctx.moveTo(0,-72);ctx.lineTo(9,-59);ctx.lineTo(0,-49);ctx.lineTo(-9,-59);ctx.fill();rect(-12,-91,24,17,'#f1b944');rect(-12,-91,24,5,'#202437')}
+ else {rect(-15,-93,30,16,color);rect(-10,-90,20,6,'#e8b8a0')}
+ // head
+ ctx.fillStyle=heroFlag?'#b96e49':'#c88a67';ctx.beginPath();ctx.arc(0,-99,13,0,Math.PI*2);ctx.fill();
+ rect(-14,-108,28,7,heroFlag?'#1b2030':'#29202a');rect(-7,-100,5,3,'#14151d');rect(5,-100,5,3,'#14151d');
+ // arms / attack
+ if(attack>0){rect(12,-75,27,10,heroFlag?'#b96e49':'#c88a67');rect(35,-78,15,14,'#e8d7b7')}
+ else {rect(14,-71,12,29,'#b96e49');rect(-25,-70,12,29,'#b96e49')}
+ if(dead){ctx.globalAlpha=.5}
+ ctx.restore();
+}
+function burst(x,y,col){for(let i=0;i<9;i++)particles.push({x,y,vx:(Math.random()-.5)*190,vy:(Math.random()-.7)*180,t:.3+Math.random()*.3,col})}
+function attack(type){if(hero.cool>0||hero.atk>0||ended)return;hero.atk=type==='kick'?.34:.24;hero.atkType=type;hero.cool=type==='kick'?.43:.3}
+function update(dt){
+ if(ended)return;
+ hero.cool=Math.max(0,hero.cool-dt);hero.atk=Math.max(0,hero.atk-dt);hero.inv=Math.max(0,hero.inv-dt);
+ if(keys.punch)attack('punch');if(keys.kick)attack('kick');
+ if(keys.jump&&hero.z===0){hero.vz=440}keys.jump=false;
+ let dx=(keys.right?1:0)-(keys.left?1:0),dy=(keys.down?1:0)-(keys.up?1:0);
+ hero.x+=dx*220*dt;hero.y+=dy*110*dt;hero.y=Math.max(365,Math.min(425,hero.y));hero.x=Math.max(35,Math.min(925,hero.x));if(dx)hero.face=dx>0?1:-1;hero.walk=Math.abs(dx)+Math.abs(dy);
+ if(hero.z>0||hero.vz>0){hero.z+=hero.vz*dt;hero.vz-=1050*dt;if(hero.z<0){hero.z=0;hero.vz=0;burst(hero.x,hero.y,'#e9c26d')}}
+ if(hero.atk>0){for(const e of enemies){if(e.dead||e.hp<=0)continue;let reach=hero.atkType==='kick'?95:76;if(Math.abs(e.x-hero.x)<reach&&Math.abs(e.y-hero.y)<35&&Math.sign(e.x-hero.x)===hero.face&&e.hit<=0){e.hp-=hero.atkType==='kick'?28:19;e.hit=.23;e.x+=hero.face*24;burst(e.x,e.y-40,'#ffd05e');score+=10;shake=5;if(e.hp<=0){score+=100;e.dead=true;burst(e.x,e.y-50,'#f27458')}}}}
+ for(const e of enemies){if(e.dead)continue;e.hit=Math.max(0,e.hit-dt);e.cool-=dt;e.atk=Math.max(0,e.atk-dt);let diff=hero.x-e.x;if(Math.abs(diff)>48){e.x+=Math.sign(diff)*Math.min(Math.abs(diff),65*dt);e.face=diff>0?1:-1;e.walk=1}else if(e.cool<=0&&Math.abs(hero.y-e.y)<35&&hero.z<22&&hero.inv<=0){e.atk=.25;e.cool=.95+Math.random()*.6;hero.hp-=e.type==='maton'?12:7;hero.inv=.6;shake=8;burst(hero.x,hero.y-40,'#ff685e')}}
+ enemies=enemies.filter(e=>!e.dead);
+ if(hero.x>650&&world<1050){world+=70*dt; if(enemies.length===0&&world>700){spawn(840);spawn(900)}}
+ if(world>=1050&&stage===0&&enemies.length===0){stage=1;world=1350;spawn(770,'maton');spawn(870)}
+ if(stage===1&&enemies.length===0){stage=2;world=1850;spawn(650,'maton');spawn(800,'maton')}
+ if(stage===2&&enemies.length===0){stage=3;win=true;ended=true;rescued=true;overlay.style.display='flex';overlay.querySelector('h1').textContent='¡RESCATE COMPLETADO!';overlay.querySelector('p').innerHTML='¡Lo lograste! El Atacameño derrotó a los matones y rescató a Valentina en la azotea.';overlay.querySelector('button').textContent='JUGAR OTRA VEZ';return}
+ if(hero.hp<=0){hero.hp=0;ended=true;overlay.style.display='flex';overlay.querySelector('h1').textContent='¡TE DERROTARON!';overlay.querySelector('p').innerHTML='Los pandilleros te superaron. Inténtalo de nuevo: combina puños, patadas y saltos.';overlay.querySelector('button').textContent='REINTENTAR'}
+ for(const p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=250*dt;p.t-=dt}particles=particles.filter(p=>p.t>0);
+ hpEl.textContent=Math.ceil(hero.hp);scoreEl.textContent=String(score).padStart(4,'0');shake=Math.max(0,shake-dt*20);
+}
+function draw(){
+ ctx.save();if(shake)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);bg();
+ // building finale when progress high
+ if(world>1300){rect(530,70,390,355,'#252a3a');rect(548,88,355,337,'#41465a');for(let x=565;x<890;x+=58)for(let y=105;y<320;y+=55){rect(x,y,32,35,'#f7bd68')}rect(530,62,390,12,'#c4c8d4');text('AZOTEA',725,53,18,'#ffdf84','center');if(world>1800){rect(700,270,65,70,'#3c2433');text('VALENTINA',733,258,13,'#fff','center');ctx.fillStyle='#e8b39b';ctx.beginPath();ctx.arc(733,290,10,0,7);ctx.fill();rect(723,300,20,27,'#c95d78')}}
+ enemies.forEach(e=>{fighter(e.x,e.y,e.z,e.face,e.type==='maton'?'#9e3445':'#536a82',false,e.walk,e.atk>0,e.dead);ctx.fillStyle='#111827';ctx.fillRect(e.x-23,e.y-122,46,6);ctx.fillStyle='#e6504d';ctx.fillRect(e.x-22,e.y-121,44*Math.max(0,e.hp/e.max),4);if(e.hit>0)text('✦',e.x,e.y-135,19,'#ffe36a','center')});
+ fighter(hero.x,hero.y,hero.z,hero.face,'#247d9c',true,hero.walk,hero.atk>0);
+ particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.t*2);ctx.fillStyle=p.col;ctx.fillRect(p.x,p.y,5,5);ctx.globalAlpha=1});
+ if(hero.atk>0){ctx.strokeStyle='#fff2a0';ctx.lineWidth=5;ctx.beginPath();ctx.arc(hero.x+hero.face*34,hero.y-62,hero.atkType==='kick'?44:31,-.8,.8);ctx.stroke()}
+ if(ended&&win){text('¡VALENTINA ESTÁ A SALVO!',480,180,30,'#ffdf73','center')}
+ ctx.restore();
+}
+function loop(now){if(!started)return;let dt=Math.min(.033,(now-last)/1000||.016);last=now;update(dt);draw();if(!ended)requestAnimationFrame(loop);else draw()}
+})();
+</script>
+</body></html>
